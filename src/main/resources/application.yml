@@ -1,0 +1,12 @@
+spring:
+  application:
+    name: demo-ai
+langchain4j:
+  community:
+    dashscope:
+      chat-model:
+        api-key: ${DASHSCOPE_API_KEY}
+        model-name: qwen-plus
+      embedding-model:
+        api-key: ${DASHSCOPE_API_KEY}
+        model-name: text-embedding-v4

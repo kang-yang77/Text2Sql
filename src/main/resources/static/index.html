@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DB-GPT Lite | 智能SQL生成</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <style>
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #1f2937; }
+        ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+        .shake { animation: shake 0.82s cubic-bezier(.36,.07,.19,.97) both; transform: translate3d(0, 0, 0); }
+        @keyframes shake {
+            10%, 90% { transform: translate3d(-1px, 0, 0); }
+            20%, 80% { transform: translate3d(2px, 0, 0); }
+            30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+            40%, 60% { transform: translate3d(4px, 0, 0); }
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen font-sans">
+
+<div id="app" class="container mx-auto px-4 py-8 max-w-7xl">
+
+    <header class="mb-8 text-center">
+        <h1 class="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-500 mb-2">
+            DB-GPT Lite
+        </h1>
+        <p class="text-gray-400">动态数据源 · RAG 增强 · 安全防注入</p>
+    </header>
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+        <div class="lg:col-span-4 space-y-6">
+
+            <div class="bg-gray-800 rounded-xl p-5 shadow-lg border border-gray-700 relative overflow-hidden">
+                <div v-if="connectionStatus === 'success'" class="absolute top-0 left-0 w-full h-1 bg-green-500 shadow-[0_0_10px_#22c55e]"></div>
+                <div v-else-if="connectionStatus === 'failed'" class="absolute top-0 left-0 w-full h-1 bg-red-500"></div>
+
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-md font-bold text-blue-400 flex items-center">
+                        ⚙️ 数据源配置
+                    </h2>
+                    <button @click="fillDefault" class="text-xs text-gray-500 hover:text-gray-300 underline">
+                        填充本地测试配置
+                    </button>
+                </div>
+
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-xs text-gray-500 mb-1">JDBC URL</label>
+                        <input v-model="form.dbUrl" type="text" placeholder="jdbc:mysql://IP:Port/DB?..."
+                               class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-xs text-gray-300 focus:border-blue-500 focus:outline-none transition">
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs text-gray-500 mb-1">Username</label>
+                            <input v-model="form.username" type="text" placeholder="root"
+                                   class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-xs focus:border-blue-500 focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-500 mb-1">Password</label>
+                            <input v-model="form.password" type="password" placeholder="******"
+                                   class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-xs focus:border-blue-500 focus:outline-none">
+                        </div>
+                    </div>
+
+                    <button
+                            @click="handleTestConnection"
+                            :disabled="loadingTest"
+                            class="w-full mt-2 border border-gray-600 hover:bg-gray-700 text-gray-300 text-xs py-2 rounded transition-colors flex justify-center items-center">
+                        <span v-if="loadingTest" class="animate-spin mr-2">⏳</span>
+                        {{ loadingTest ? '正在连接...' : '🔗 测试数据库连接' }}
+                    </button>
+
+                    <div v-if="connectionStatus === 'success'" class="text-xs text-green-400 text-center mt-2 animate-pulse">
+                        ✅ 数据库连接成功，AI 已准备就绪
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-gray-800 rounded-xl p-5 shadow-lg border border-gray-700">
+                <h2 class="text-md font-bold mb-4 flex items-center text-indigo-400">
+                    💬 智能提问
+                </h2>
+                <textarea
+                        v-model="form.question"
+                        rows="5"
+                        class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none mb-4 resize-none leading-relaxed"
+                        placeholder="请先配置并测试数据库连接，然后输入问题...">
+                </textarea>
+
+                <div v-if="errorMessage" class="mb-4 bg-red-900/50 border border-red-500/50 text-red-200 px-4 py-3 rounded-lg text-sm flex items-start shake">
+                    <svg class="w-5 h-5 mr-2 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                    <span>{{ errorMessage }}</span>
+                </div>
+
+                <div class="flex flex-col gap-3">
+                    <button
+                            @click="handleGenerate"
+                            :disabled="loadingGenerate || connectionStatus !== 'success'"
+                            :class="connectionStatus === 'success' ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-gray-700 text-gray-500 cursor-not-allowed'"
+                            class="w-full font-medium py-2 rounded-lg transition-all flex justify-center items-center shadow-md">
+                        <span v-if="loadingGenerate" class="animate-spin mr-2">⏳</span>
+                        {{ loadingGenerate ? '正在生成...' : '第一步：AI 生成 SQL' }}
+                    </button>
+
+                    <button
+                            @click="handleExecute"
+                            :disabled="loadingExecute || !generatedSql"
+                            class="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-700 disabled:text-gray-500 text-white font-medium py-2 rounded-lg transition-all flex justify-center items-center shadow-md">
+                        <span v-if="loadingExecute" class="animate-spin mr-2">🚀</span>
+                        {{ loadingExecute ? '正在执行...' : '第二步：运行 SQL' }}
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="lg:col-span-8 space-y-6">
+            <div class="bg-gray-800 rounded-xl overflow-hidden border border-gray-700 shadow-lg flex flex-col h-[280px]">
+                <div class="bg-gray-900/50 px-4 py-2 border-b border-gray-700 flex justify-between items-center">
+                    <span class="text-sm font-semibold text-gray-300">📝 SQL 编辑器</span>
+                    <span v-if="generatedSql" class="text-xs text-green-400 bg-green-900/30 px-2 py-0.5 rounded">已生成</span>
+                </div>
+                <textarea v-model="generatedSql" class="flex-1 w-full bg-[#1e2227] text-blue-300 font-mono text-sm p-4 focus:outline-none resize-none" placeholder="生成的 SQL 将显示在这里..."></textarea>
+            </div>
+            <div v-if="queryResult" class="bg-gray-800 rounded-xl overflow-hidden border border-gray-700 shadow-lg min-h-[200px]">
+                <div class="px-6 py-3 border-b border-gray-700 flex justify-between items-center bg-gray-900/30">
+                    <h3 class="font-semibold text-gray-200">📊 查询结果</h3>
+                    <span class="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded-full">{{ queryResult.count }} 条记录</span>
+                </div>
+                <div class="overflow-x-auto max-h-[500px]">
+                    <table class="w-full text-left border-collapse">
+                        <thead class="sticky top-0 bg-gray-900 shadow-sm z-10">
+                        <tr><th v-for="key in tableHeaders" :key="key" class="px-6 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider whitespace-nowrap border-b border-gray-700">{{ key }}</th></tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-700 text-sm">
+                        <tr v-for="(row, index) in queryResult.data" :key="index" class="hover:bg-gray-700/50 transition-colors">
+                            <td v-for="key in tableHeaders" :key="key" class="px-6 py-4 text-gray-300 whitespace-nowrap">{{ row[key] }}</td>
+                        </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div v-else-if="!queryResult && generatedSql" class="flex flex-col items-center justify-center h-48 text-gray-500 border-2 border-dashed border-gray-700 rounded-xl bg-gray-800/50">
+                <p>SQL 已就绪，请点击左侧 <span class="text-emerald-500 font-bold">"运行 SQL"</span> 查看数据</p>
+            </div>
+            <div v-else class="flex flex-col items-center justify-center h-48 text-gray-600 border-2 border-dashed border-gray-800 rounded-xl">
+                <p>暂无数据</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const { createApp, ref, computed } = Vue;
+
+    createApp({
+        setup() {
+            const loadingTest = ref(false); // 新增：测试连接 loading
+            const loadingGenerate = ref(false);
+            const loadingExecute = ref(false);
+
+            const generatedSql = ref("");
+            const queryResult = ref(null);
+            const errorMessage = ref("");
+            const connectionStatus = ref(""); // "success" | "failed" | ""
+
+            // 1. 默认值现在是空的！
+            const form = ref({
+                dbUrl: '',
+                username: '',
+                password: '',
+                question: ''
+            });
+
+            // 提供一个“一键填充”功能，方便本地测试
+            const fillDefault = () => {
+                form.value.dbUrl = 'jdbc:mysql://localhost:3306/sql_pilot_test?serverTimezone=UTC&characterEncoding=utf-8&allowPublicKeyRetrieval=true';
+                form.value.username = 'root';
+                form.value.password = 'your_password'; //  替换这里
+                errorMessage.value = "";
+                connectionStatus.value = "";
+            };
+
+            const tableHeaders = computed(() => {
+                if (!queryResult.value || !queryResult.value.data || queryResult.value.data.length === 0) return [];
+                return Object.keys(queryResult.value.data[0]);
+            });
+
+            const sendRequest = async (url, body, loadingRef, isExecute = false) => {
+                errorMessage.value = "";
+                loadingRef.value = true;
+                if (!isExecute && url !== '/api/sql/test-connection') queryResult.value = null;
+
+                try {
+                    const res = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(body)
+                    });
+                    const data = await res.json();
+
+                    if (data.error) throw new Error(data.error);
+                    if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
+
+                    return data;
+                } catch (e) {
+                    console.error("请求出错:", e);
+                    errorMessage.value = e.message;
+                    return null;
+                } finally {
+                    loadingRef.value = false;
+                }
+            };
+
+            // 新增：测试连接
+            const handleTestConnection = async () => {
+                if(!form.value.dbUrl) return (errorMessage.value = "URL 不能为空");
+                connectionStatus.value = "";
+
+                const data = await sendRequest('/api/sql/test-connection', form.value, loadingTest);
+
+                if (data && data.status === 'success') {
+                    connectionStatus.value = "success";
+                } else {
+                    connectionStatus.value = "failed";
+                }
+            };
+
+            const handleGenerate = async () => {
+                if(connectionStatus.value !== 'success') return (errorMessage.value = "请先测试数据库连接！");
+                if(!form.value.question) return (errorMessage.value = "请输入问题");
+
+                const data = await sendRequest('/api/sql/generate', form.value, loadingGenerate);
+                if (data) generatedSql.value = data.sql;
+            };
+
+            const handleExecute = async () => {
+                if(!generatedSql.value) return (errorMessage.value = "SQL 内容不能为空");
+                const reqBody = { ...form.value, sql: generatedSql.value };
+                const data = await sendRequest('/api/sql/execute', reqBody, loadingExecute, true);
+                if (data && data.data) queryResult.value = data;
+            };
+
+            return {
+                loadingTest, loadingGenerate, loadingExecute,
+                form, generatedSql, queryResult, tableHeaders, errorMessage, connectionStatus,
+                handleTestConnection, handleGenerate, handleExecute, fillDefault
+            };
+        }
+    }).mount('#app');
+</script>
+</body>
+</html>
