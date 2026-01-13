@@ -81,23 +81,46 @@
                 </div>
             </div>
 
-            <div class="bg-gray-800 rounded-xl p-5 shadow-lg border border-gray-700">
-                <h2 class="text-md font-bold mb-4 flex items-center text-indigo-400">
+            <div class="bg-gray-800 rounded-xl p-5 shadow-lg border border-gray-700 flex flex-col h-auto">
+                <h2 class="text-md font-bold mb-3 flex items-center text-indigo-400">
                     💬 智能提问
                 </h2>
+
+                <div class="mb-3 px-3 py-2 bg-gray-900/50 rounded border border-gray-700/50 text-xs flex items-center flex-wrap">
+                    <span class="text-gray-500 mr-2 flex-shrink-0">数据库中已有表:</span>
+                    <div class="flex gap-3">
+                        <span v-for="t in tables" :key="t.name" class="text-indigo-300 hover:text-indigo-200 transition-colors font-medium border-b border-indigo-500/30 cursor-default">
+                            {{ t.desc }}
+                        </span>
+                    </div>
+                </div>
+
                 <textarea
                         v-model="form.question"
-                        rows="5"
-                        class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none mb-4 resize-none leading-relaxed"
-                        placeholder="请先配置并测试数据库连接，然后输入问题...">
+                        rows="4"
+                        class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none mb-3 resize-none leading-relaxed transition-colors"
+                        placeholder="请输入您的自然语言问题...">
                 </textarea>
+
+                <div class="mb-4">
+                    <p class="text-[10px] text-gray-500 mb-2 uppercase tracking-wide">💡 试试问这些 (点击填入):</p>
+                    <div class="flex flex-wrap gap-2">
+                        <button
+                                v-for="(q, idx) in suggestedQuestions"
+                                :key="idx"
+                                @click="applySuggestion(q)"
+                                class="text-xs bg-gray-700 hover:bg-indigo-600 hover:text-white text-gray-300 px-3 py-1.5 rounded-full transition-all duration-200 border border-gray-600 hover:border-indigo-500 active:scale-95">
+                            {{ q }}
+                        </button>
+                    </div>
+                </div>
 
                 <div v-if="errorMessage" class="mb-4 bg-red-900/50 border border-red-500/50 text-red-200 px-4 py-3 rounded-lg text-sm flex items-start shake">
                     <svg class="w-5 h-5 mr-2 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
                     <span>{{ errorMessage }}</span>
                 </div>
 
-                <div class="flex flex-col gap-3">
+                <div class="flex flex-col gap-3 mt-auto">
                     <button
                             @click="handleGenerate"
                             :disabled="loadingGenerate || connectionStatus !== 'success'"
@@ -159,16 +182,15 @@
 
     createApp({
         setup() {
-            const loadingTest = ref(false); // 新增：测试连接 loading
+            const loadingTest = ref(false);
             const loadingGenerate = ref(false);
             const loadingExecute = ref(false);
 
             const generatedSql = ref("");
             const queryResult = ref(null);
             const errorMessage = ref("");
-            const connectionStatus = ref(""); // "success" | "failed" | ""
+            const connectionStatus = ref("");
 
-            // 1. 默认值现在是空的！
             const form = ref({
                 dbUrl: '',
                 username: '',
@@ -176,11 +198,30 @@
                 question: ''
             });
 
-            // 提供一个“一键填充”功能，方便本地测试
+            // --- 表结构定义 (供前端显示) ---
+            const tables = ref([
+                { name: 't_users', desc: '用户表' },
+                { name: 't_orders', desc: '订单表' },
+                { name: 't_products', desc: '商品表' }
+            ]);
+
+            // --- 推荐问题 ---
+            const suggestedQuestions = ref([
+                "查询所有 SVIP 等级的用户",
+                "查询所有新客",
+                "统计每种商品的库存数量",
+                "查询金额大于 1000 的订单",
+                "列出所有高价值用户"
+            ]);
+
+            const applySuggestion = (q) => {
+                form.value.question = q;
+            };
+
             const fillDefault = () => {
-                form.value.dbUrl = 'jdbc:mysql://localhost:3306/sql_pilot_test?serverTimezone=UTC&characterEncoding=utf-8&allowPublicKeyRetrieval=true';
-                form.value.username = 'root';
-                form.value.password = 'your_password'; //  替换这里
+                form.value.dbUrl = 'jdbc:mysql://mysql:3306/text2sql_db?serverTimezone=Asia/Shanghai&characterEncoding=utf-8&allowPublicKeyRetrieval=true&useSSL=false';
+                form.value.username = 'demo_guest';
+                form.value.password = 'demo123456';
                 errorMessage.value = "";
                 connectionStatus.value = "";
             };
@@ -193,7 +234,7 @@
             const sendRequest = async (url, body, loadingRef, isExecute = false) => {
                 errorMessage.value = "";
                 loadingRef.value = true;
-                if (!isExecute && url !== '/api/sql/test-connection') queryResult.value = null;
+                if (!isExecute && url !== '/text2sql/api/sql/test-connection') queryResult.value = null;
 
                 try {
                     const res = await fetch(url, {
@@ -216,12 +257,11 @@
                 }
             };
 
-            // 新增：测试连接
             const handleTestConnection = async () => {
                 if(!form.value.dbUrl) return (errorMessage.value = "URL 不能为空");
                 connectionStatus.value = "";
 
-                const data = await sendRequest('/api/sql/test-connection', form.value, loadingTest);
+                const data = await sendRequest('/text2sql/api/sql/test-connection', form.value, loadingTest);
 
                 if (data && data.status === 'success') {
                     connectionStatus.value = "success";
@@ -232,22 +272,23 @@
 
             const handleGenerate = async () => {
                 if(connectionStatus.value !== 'success') return (errorMessage.value = "请先测试数据库连接！");
-                if(!form.value.question) return (errorMessage.value = "请输入问题");
+                if(!form.value.question) return (errorMessage.value = "请输入需要查询的问题！");
 
-                const data = await sendRequest('/api/sql/generate', form.value, loadingGenerate);
+                const data = await sendRequest('/text2sql/api/sql/generate', form.value, loadingGenerate);
                 if (data) generatedSql.value = data.sql;
             };
 
             const handleExecute = async () => {
                 if(!generatedSql.value) return (errorMessage.value = "SQL 内容不能为空");
                 const reqBody = { ...form.value, sql: generatedSql.value };
-                const data = await sendRequest('/api/sql/execute', reqBody, loadingExecute, true);
+                const data = await sendRequest('/text2sql/api/sql/execute', reqBody, loadingExecute, true);
                 if (data && data.data) queryResult.value = data;
             };
 
             return {
                 loadingTest, loadingGenerate, loadingExecute,
                 form, generatedSql, queryResult, tableHeaders, errorMessage, connectionStatus,
+                suggestedQuestions, applySuggestion, tables,
                 handleTestConnection, handleGenerate, handleExecute, fillDefault
             };
         }

@@ -1,5 +1,6 @@
 package com.yk.demoai.service;
 
+import com.yk.demoai.dto.Result;
 import com.yk.demoai.dto.SqlRequest;
 import org.springframework.web.bind.annotation.RequestBody;
 

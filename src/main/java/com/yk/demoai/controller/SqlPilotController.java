@@ -1,12 +1,15 @@
 package com.yk.demoai.controller;
+import com.yk.demoai.dto.Result;
 import com.yk.demoai.dto.SqlRequest;
 import com.yk.demoai.service.ISqlService;
+import com.yk.demoai.util.DatabaseOperationUtil;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import java.util.List;
 import java.util.Map;
 
 

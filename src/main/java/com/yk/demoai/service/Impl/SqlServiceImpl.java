@@ -1,7 +1,9 @@
 package com.yk.demoai.service.Impl;
+import com.yk.demoai.dto.Result;
 import com.yk.demoai.dto.SqlRequest;
 import com.yk.demoai.service.ISqlService;
 import com.yk.demoai.service.SqlGenerator;
+import com.yk.demoai.util.DatabaseOperationUtil;
 import com.zaxxer.hikari.HikariDataSource;
 import dev.langchain4j.rag.content.Content;
 import dev.langchain4j.rag.content.retriever.ContentRetriever;
@@ -97,68 +99,33 @@ public class SqlServiceImpl implements ISqlService {
             throw new IllegalArgumentException("SQL 不能为空");
         }
 
-        // 2. 安全检查：只读锁
+        // 2. 安全检查
         if (!isReadOnly(sql)) {
             log.warn("拦截到潜在危险 SQL: {}", sql);
-            throw new IllegalArgumentException("安全拦截：本工具仅支持查询操作 (SELECT/SHOW/WITH)，禁止增删改！");
+            throw new IllegalArgumentException("安全拦截：本工具仅支持查询操作，禁止增删改！");
         }
 
         log.info("开始执行 SQL: {}", sql);
 
-        // 3. 动态创建 DataSource (连接池)
-        // 显式指定为 HikariDataSource，以便后续强制关闭
-        DataSource dataSource = DataSourceBuilder.create()
-                .url(url)
-                .username(username)
-                .password(password)
-                .driverClassName("com.mysql.cj.jdbc.Driver")
-                .type(HikariDataSource.class)
-                .build();
-
-        List<Map<String, Object>> resultList = new ArrayList<>();
-
         try {
-            // 4. 获取连接并执行
-            try (Connection conn = dataSource.getConnection()) {
-                // JDBC 层面的只读双重保险
-                conn.setReadOnly(true);
+            List<Map<String, Object>> resultList = DatabaseOperationUtil.executeQuery(
+                    sql, url, username, password
+            );
+            // 4. 组装返回结果
+            Map<String, Object> resultMap = new HashMap<>();
+            resultMap.put("data", resultList);
+            resultMap.put("count", resultList.size());
 
-                try (Statement stmt = conn.createStatement()) {
-                    stmt.setQueryTimeout(15); // 设置超时防止死循环
+            return resultMap;
 
-                    try (ResultSet rs = stmt.executeQuery(sql)) {
-                        ResultSetMetaData metaData = rs.getMetaData();
-                        int columnCount = metaData.getColumnCount();
-
-                        while (rs.next()) {
-                            Map<String, Object> row = new HashMap<>();
-                            for (int i = 1; i <= columnCount; i++) {
-                                String key = metaData.getColumnLabel(i);
-                                Object val = rs.getObject(i);
-                                row.put(key, val);
-                            }
-                            resultList.add(row);
-                        }
-                    }
-                }
-            }
-        } catch (SQLException e) {
+        } catch (Exception e) {
             log.error("SQL 执行异常", e);
+            // 简单的异常转换
             if (e.getMessage() != null && e.getMessage().contains("Access denied")) {
                 throw new RuntimeException("数据库连接失败：用户名或密码错误。");
             }
             throw new RuntimeException("SQL 执行错误: " + e.getMessage());
-        } finally {
-            // 防止 HikariCP 线程泄漏导致的 Thread starvation 报错
-            closeDataSource(dataSource);
         }
-
-        // 6. 组装返回结果
-        Map<String, Object> resultMap = new HashMap<>();
-        resultMap.put("data", resultList);
-        resultMap.put("count", resultList.size());
-
-        return resultMap;
     }
 
     @Override

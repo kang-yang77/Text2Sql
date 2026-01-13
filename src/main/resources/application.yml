@@ -10,3 +10,6 @@ langchain4j:
       embedding-model:
         api-key: ${DASHSCOPE_API_KEY}
         model-name: text-embedding-v4
+logging:
+  level:
+    com.yk.demoai: ERROR
